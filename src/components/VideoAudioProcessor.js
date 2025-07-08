@@ -4,13 +4,14 @@ import * as handpose from '@tensorflow-models/hand-pose-detection';
 
 const W = 400;
 const H = 300;
-const TRAIL_LEN = 90;               // keep last 3 s @ ~30 fps
+const TRAIL_LEN = 90;                       // ≈3 s @30 fps
+const COLORS = ['yellow', 'orange'];        // hand 0, hand 1
 
 export default function VideoAudioProcessor({ onFinish }) {
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
   const rafRef    = useRef(null);
-  const trailRef  = useRef([]);     // [{x,y}, …] index-finger points
+  const trailsRef = useRef([[], []]);       // one trail per hand
 
   useEffect(() => {
     let stream, detector;
@@ -23,10 +24,8 @@ export default function VideoAudioProcessor({ onFinish }) {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
 
-      /* mirror both layers */
       [videoRef.current, canvasRef.current].forEach(el => {
-        el.width = W; el.height = H;
-        el.style.transform = 'scaleX(-1)';
+        el.width = W; el.height = H; el.style.transform = 'scaleX(-1)';
       });
 
       /* MediaPipe Hands */
@@ -35,7 +34,7 @@ export default function VideoAudioProcessor({ onFinish }) {
         { runtime: 'tfjs', modelType: 'lite', maxHands: 2 }
       );
 
-      /* draw loop */
+      /* loop */
       const ctx = canvasRef.current.getContext('2d');
       const loop = async () => {
         const hands = await detector.estimateHands(videoRef.current);
@@ -49,29 +48,32 @@ export default function VideoAudioProcessor({ onFinish }) {
           })
         );
 
-        /* fingertip tracking (use first hand if present) */
-        if (hands[0]?.keypoints[8]) {
-          const { x, y } = hands[0].keypoints[8];       // landmark 8
-          trailRef.current.push({ x, y });
-          if (trailRef.current.length > TRAIL_LEN) trailRef.current.shift();
+        /* per-hand tracking */
+        hands.forEach((hand, idx) => {
+          const tip = hand.keypoints[8];            // index finger tip
+          if (!tip) return;
+          const trail = trailsRef.current[idx];
+          trail.push({ x: tip.x, y: tip.y });
+          if (trail.length > TRAIL_LEN) trail.shift();
 
-          /* draw yellow trail */
-          ctx.strokeStyle = 'yellow'; ctx.lineWidth = 2;
+          /* draw trail */
+          ctx.strokeStyle = COLORS[idx];
+          ctx.lineWidth   = 2;
           ctx.beginPath();
-          trailRef.current.forEach((p, i) =>
+          trail.forEach((p, i) =>
             i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)
           );
           ctx.stroke();
 
-          /* simple metric: total distance */
-          const dist = trailRef.current.slice(1).reduce(
-            (sum, p, i) => sum + Math.hypot(
-              p.x - trailRef.current[i].x,
-              p.y - trailRef.current[i].y
+          /* distance metric */
+          const dist = trail.slice(1).reduce(
+            (s, p, i) => s + Math.hypot(
+              p.x - trail[i].x,
+              p.y - trail[i].y
             ), 0
           );
-          console.log('Total distance (px):', dist.toFixed(0));
-        }
+          console.log(`Hand ${idx} distance:`, dist.toFixed(0), 'px');
+        });
 
         rafRef.current = requestAnimationFrame(loop);
       };
@@ -100,7 +102,7 @@ export default function VideoAudioProcessor({ onFinish }) {
   );
 }
 
-/* mock report (unchanged) */
+/* unchanged mock report */
 const MOCK_REPORT = {
   content_score: 7.8,
   voice_score:   3.5,
