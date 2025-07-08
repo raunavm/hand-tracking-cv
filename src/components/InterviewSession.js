@@ -1,52 +1,49 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 import VideoAudioProcessor from './VideoAudioProcessor';
+import FeedbackReport      from './FeedbackReport';
 
-function InterviewSession({ onComplete }) {
-  const [isRunning, setIsRunning] = React.useState(false);
+export default function InterviewSession() {
+  const [stage,  setStage]  = useState('idle');   // idle | recording | processing | report
+  const [report, setReport] = useState(null);
 
-  const handleFinish = (metrics, transcript) => {
-    // Template data instead of backend call
-    const templateReport = {
+  const handleFinish = (cameraReport) => {
+    setStage('processing');          // hide camera
+
+    const finalReport = {
+      ...cameraReport,
       content_score: 8.5,
-      voice_score: 7.2,
-      face_score: 9.1,
-      tips: [
-        "Great job maintaining eye contact throughout the interview!",
-        "Your voice was clear and confident. Consider varying your pace slightly for emphasis.",
-        "Excellent use of specific examples when discussing your experiences.",
-        "Try to elaborate more on your problem-solving process in future interviews."
-      ],
-      overall_feedback: "Strong performance with clear communication and good presence. Continue practicing to build even more confidence.",
+      voice_score:   7.2,
+      face_score:    9.1,
+      overall_feedback:
+        'Strong performance with clear communication and good presence.',
       strengths: [
-        "Professional appearance and demeanor",
-        "Clear articulation and speaking pace",
-        "Good use of examples and stories",
-        "Maintained composure under pressure"
+        'Professional demeanor',
+        'Clear articulation',
+        'Good storytelling',
+        'Stayed composed under pressure',
       ],
       areas_for_improvement: [
-        "Could provide more specific metrics when discussing achievements",
-        "Practice transitioning between topics more smoothly",
-        "Work on concluding answers with stronger impact statements"
+        'Add quantitative results to achievements',
+        'Smoother topic transitions',
+        'Stronger conclusions',
       ],
-      interview_duration: "4 minutes 32 seconds",
-      transcript: transcript
+      tips: [
+        'Maintain eye contact.',
+        'Vary voice pace for emphasis.',
+        'Use stronger wrap-up statements.',
+      ],
+      interview_duration: '0 min 05 s',
     };
 
-    // Simulate processing delay
     setTimeout(() => {
-      onComplete(templateReport);
+      setReport(finalReport);
+      setStage('report');
     }, 1500);
   };
 
-  return (
-    <div>
-      <button onClick={() => setIsRunning(true)}>Start Interview</button>
-      {isRunning && (
-        <VideoAudioProcessor onFinish={handleFinish} />
-      )}
-    </div>
-  );
-}
+  if (stage === 'report')     return <FeedbackReport report={report} />;
+  if (stage === 'processing') return <p>Generating feedback…</p>;
+  if (stage === 'recording')  return <VideoAudioProcessor onFinish={handleFinish} />;
 
-export default InterviewSession;
+  return <button onClick={() => setStage('recording')}>Start Interview</button>;
+}
