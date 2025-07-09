@@ -1,13 +1,12 @@
-// src/components/VideoAudioProcessor.js
 import React, { useEffect, useRef, useState } from 'react';
 import '@tensorflow/tfjs-backend-webgl';
 import * as handpose from '@tensorflow-models/hand-pose-detection';
 
 const W = 400, H = 300;
-const TRAIL_LEN = 90;                  // ≈3 s @ 30 fps
+const TRAIL_LEN = 90;
 const COLORS    = ['yellow', 'orange'];
 const MOVE_EPS  = 2;
-const ANGLE_THR = 1.0;                 // > 57°
+const ANGLE_THR = 1.0;
 
 /* feedback thresholds */
 const TOO_LITTLE = m =>
