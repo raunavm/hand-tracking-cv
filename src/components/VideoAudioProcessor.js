@@ -1,18 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import '@tensorflow/tfjs-backend-webgl';
 import * as handpose from '@tensorflow-models/hand-pose-detection';
+import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
 
 const W = 400, H = 300;
-const TRAIL_LEN = 90;            // ~3s @30fps
+const TRAIL_LEN = 45;
 const COLORS = ['yellow','orange'];
 const MOVE_EPS = 2;
 const ANGLE_THR = 1.0;
+const CALIBRATION_TIME = 5000;
+const RECORD_TIME = 30000;
 
-// only average speed & erratic
 const TOO_LITTLE = m => m.speed < 100 && m.err < 3;
 const TOO_MUCH   = m => m.speed > 300 || m.err > 7;
 
-// mock final report
 const MOCK_REPORT = {
   content_score: 7.8,
   voice_score:   3.5,
@@ -26,58 +27,137 @@ const MOCK_REPORT = {
 };
 
 export default function VideoAudioProcessor({ onFinish }) {
-  const videoRef    = useRef();
-  const canvasRef   = useRef();
-  const rafRef      = useRef();
-  const trails      = useRef([[],[]]);
+  const videoRef = useRef();
+  const canvasRef = useRef();
+  const rafRef = useRef();
+  const trails = useRef([[], []]);
   const showOverlay = useRef(true);
-
+  const iodRef = useRef(null);
+  const baselineIOD = useRef(null);
+  const lastEyeLine = useRef(null);
+  const [calibrated, setCalibrated] = useState(false);
   const [ui, setUI] = useState({
-    hand: [{speed:0,err:0},{speed:0,err:0}],
+    hand: [{speed:0, err:0}, {speed:0, err:0}],
     feedback: 'Waiting for hands…',
-    finished: false
+    finished: false,
+    countdown: 5
   });
 
   useEffect(() => {
-    let stream, detector;
+    let stream, handDetector, faceDetector;
+    let calibrationTimer, recordTimer;
+    let frameCount = 0;
+
     (async () => {
-      // start webcam
-      stream = await navigator.mediaDevices.getUserMedia({
-        video:{width:W,height:H}, audio:true
-      });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { width: W, height: H }, audio: true });
       const vid = videoRef.current;
       vid.srcObject = stream;
       await vid.play();
       vid.style.transform = 'scaleX(-1)';
+      vid.style.objectFit = 'cover';
 
-      // setup canvas
       const ctx = canvasRef.current.getContext('2d');
       canvasRef.current.width = W;
       canvasRef.current.height = H;
 
-      // load model
-      detector = await handpose.createDetector(
-        handpose.SupportedModels.MediaPipeHands,
-        { runtime:'tfjs', modelType:'lite', maxHands:2 }
+      handDetector = await handpose.createDetector(handpose.SupportedModels.MediaPipeHands, {
+        runtime: 'tfjs',
+        modelType: 'lite',
+        maxHands: 2
+      });
+
+      faceDetector = await faceLandmarksDetection.createDetector(
+        faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+        {
+          runtime: 'tfjs',
+          refineLandmarks: true,
+          maxFaces: 1
+        }
       );
 
-      // frame loop
+      let countdown = 5;
+      calibrationTimer = setInterval(() => {
+        countdown--;
+        setUI(u => ({ ...u, countdown }));
+        if (countdown === 0) {
+          clearInterval(calibrationTimer);
+          setCalibrated(true);
+
+          // Capture baseline IOD at end of calibration
+          baselineIOD.current = iodRef.current;
+
+          recordTimer = setTimeout(() => {
+            if (rafRef.current) {
+              cancelAnimationFrame(rafRef.current);
+              rafRef.current = null;
+            }
+            stream.getTracks().forEach(t => t.stop());
+            setUI(u => ({ ...u, finished: true }));
+            onFinish?.(MOCK_REPORT);
+          }, RECORD_TIME);
+        }
+      }, 1000);
+
       const loop = async () => {
-        // wait until video ready
-        if (!vid.videoWidth || !vid.videoHeight) {
+        if (!canvasRef.current || !videoRef.current) return;
+        const vid = videoRef.current;
+        const ctx = canvasRef.current.getContext('2d');
+        if (vid.readyState < 2) {
           rafRef.current = requestAnimationFrame(loop);
           return;
         }
 
-        const hands = await detector.estimateHands(vid);
-        ctx.clearRect(0,0,W,H);
+        frameCount++;
+        const [hands, faces] = await Promise.all([
+          handDetector.estimateHands(vid),
+          frameCount % 3 === 0 ? faceDetector.estimateFaces(vid) : []
+        ]);
 
-        // metrics & seen flags
-        const seen = [false,false];
-        const metrics = [{speed:0,err:0},{speed:0,err:0}];
+        ctx.clearRect(0, 0, W, H);
 
-        // draw & compute per hand
-        for (let idx=0; idx<2; idx++) {
+        if (!calibrated && showOverlay.current) {
+          ctx.save();
+          ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(W / 2, H / 3, 45, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        if (faces.length > 0) {
+          const k = faces[0].keypoints;
+          const l = k.find(p => p.name === 'leftEye');
+          const r = k.find(p => p.name === 'rightEye');
+          if (l && r) {
+            iodRef.current = Math.hypot(l.x - r.x, l.y - r.y);
+            lastEyeLine.current = { lx: l.x, ly: l.y, rx: r.x, ry: r.y };
+          }
+        }
+
+        if (lastEyeLine.current && showOverlay.current) {
+          const { lx, ly, rx, ry } = lastEyeLine.current;
+          ctx.save();
+          ctx.translate(W, 0);
+          ctx.scale(-1, 1);
+          ctx.beginPath();
+          ctx.strokeStyle = 'cyan';
+          ctx.lineWidth = 2;
+          ctx.moveTo(lx, ly);
+          ctx.lineTo(rx, ry);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        const iodScale = iodRef.current && baselineIOD.current
+          ? iodRef.current / baselineIOD.current
+          : 1.0;
+
+        const seen = [false, false];
+        const metrics = [{ speed: 0, err: 0 }, { speed: 0, err: 0 }];
+
+        for (let idx = 0; idx < 2; idx++) {
           const h = hands[idx];
           if (!h) {
             trails.current[idx] = [];
@@ -85,119 +165,101 @@ export default function VideoAudioProcessor({ onFinish }) {
           }
           seen[idx] = true;
 
-          // track middle-finger base = keypoint 9
-          const {x,y} = h.keypoints[9];
+          const k = h.keypoints;
+          const x = (k[8].x + k[9].x + k[12].x) / 3;
+          const y = (k[8].y + k[9].y + k[12].y) / 3;
           const tr = trails.current[idx];
-          tr.push({x,y});
-          if (tr.length>TRAIL_LEN) tr.shift();
+          tr.push({ x, y });
+          if (tr.length > TRAIL_LEN) tr.shift();
 
-          // draw overlay only if allowed
           if (showOverlay.current) {
-            // landmarks
-            ctx.save(); ctx.translate(W,0); ctx.scale(-1,1);
-            h.keypoints.forEach(pt=>{
+            ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1);
+            h.keypoints.forEach(pt => {
               ctx.beginPath();
-              ctx.arc(pt.x,pt.y,4,0,2*Math.PI);
-              ctx.fillStyle='lime'; ctx.fill();
+              ctx.arc(pt.x, pt.y, 4, 0, 2 * Math.PI);
+              ctx.fillStyle = 'lime';
+              ctx.fill();
             });
             ctx.restore();
 
-            // trail
-            ctx.save(); ctx.translate(W,0); ctx.scale(-1,1);
+            ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1);
             ctx.strokeStyle = COLORS[idx];
             ctx.lineWidth = 2;
             ctx.beginPath();
-            tr.forEach((p,i)=>
-              i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)
-            );
-            ctx.stroke();
-            ctx.restore();
-
-            // head-slot
-            ctx.save();
-            ctx.setLineDash([6,4]);
-            ctx.strokeStyle='rgba(255,255,255,0.6)';
-            ctx.lineWidth=2;
-            ctx.beginPath();
-            ctx.arc(W/2,H/3,60,0,Math.PI*2);
+            tr.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
             ctx.stroke();
             ctx.restore();
           }
 
-          // compute metrics
-          const segs = tr.slice(1).map((p,i)=>{
-            const dx=p.x-tr[i].x, dy=p.y-tr[i].y;
-            return {d:Math.hypot(dx,dy), a:Math.atan2(dy,dx)};
-          }).filter(s=>s.d>=MOVE_EPS);
+          const segs = tr.slice(1).map((p, i) => {
+            const dx = p.x - tr[i].x, dy = p.y - tr[i].y;
+            return { d: Math.hypot(dx, dy), a: Math.atan2(dy, dx) };
+          }).filter(s => s.d >= MOVE_EPS);
 
-          const total = segs.reduce((s,o)=>s+o.d,0);
-          const speed = total/(tr.length/30);
-          let turns=0;
-          segs.forEach((s,i)=>{
-            if(i>0){
-              let dA=Math.abs(s.a-segs[i-1].a);
-              if(dA>Math.PI) dA=2*Math.PI-dA;
-              if(dA>ANGLE_THR) turns++;
+          const total = segs.reduce((s, o) => s + o.d, 0) / iodScale;
+          const speed = total / (tr.length / 30);
+          let turns = 0;
+          segs.forEach((s, i) => {
+            if (i > 0) {
+              let dA = Math.abs(s.a - segs[i - 1].a);
+              if (dA > Math.PI) dA = 2 * Math.PI - dA;
+              if (dA > ANGLE_THR) turns++;
             }
           });
-          const err = turns/(tr.length/30);
-          metrics[idx] = {speed,err};
+          const err = turns / (tr.length / 30);
+          metrics[idx] = { speed, err };
         }
 
-        // live feedback from left hand
-        let fb = seen[0] 
+        let fb = seen[0]
           ? TOO_LITTLE(metrics[0]) ? 'Too little – gesture more'
             : TOO_MUCH(metrics[0]) ? 'Too much – slow down'
             : 'Just right'
           : 'No hands detected';
 
-        setUI(u=>({ ...u, hand:metrics, feedback:fb }));
+        setUI(u => ({ ...u, hand: metrics, feedback: fb }));
         rafRef.current = requestAnimationFrame(loop);
       };
-      loop();
 
-      // stop after 30s
-      setTimeout(()=>{
-        cancelAnimationFrame(rafRef.current);
-        stream.getTracks().forEach(t=>t.stop());
-        setUI(u=>({...u, finished:true}));
-        onFinish?.(MOCK_REPORT);
-      }, 30000);
+      rafRef.current = requestAnimationFrame(loop);
     })();
 
-    return ()=>{
+    return () => {
       rafRef.current && cancelAnimationFrame(rafRef.current);
-      stream && stream.getTracks().forEach(t=>t.stop());
+      stream && stream.getTracks().forEach(t => t.stop());
+      clearInterval(calibrationTimer);
+      clearTimeout(recordTimer);
     };
   }, [onFinish]);
 
-  // overlay toggle
   const toggle = () => {
     showOverlay.current = !showOverlay.current;
   };
 
-  // render nothing if finished; parent shows feedback
   if (ui.finished) return null;
 
   return (
     <div>
-      <div style={{position:'relative',width:W,height:H}}>
+      <div style={{ position: 'relative', width: W, height: H }}>
         <video ref={videoRef}
                width={W} height={H}
                muted playsInline
-               style={{borderRadius:8,transform:'scaleX(-1)'}}/>
+               style={{ borderRadius: 8, transform: 'scaleX(-1)' }} />
         <canvas ref={canvasRef}
-                style={{position:'absolute',top:0,left:0,pointerEvents:'none'}}/>
+                style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }} />
       </div>
-      <button onClick={toggle} style={{margin:'8px 0'}}>
+      <button onClick={toggle} style={{ margin: '8px 0' }}>
         {showOverlay.current ? 'Hide Overlay' : 'Show Overlay'}
       </button>
-      <div style={{fontSize:14}}>
-        {ui.hand.map((h,i)=>(
+      {!calibrated && (
+        <div>
+          <strong>Calibrating... Align your face inside the circle</strong><br />
+          Starting in: {ui.countdown}s
+        </div>
+      )}
+      <div style={{ fontSize: 14 }}>
+        {ui.hand.map((h, i) => (
           <div key={i}>
-            <strong>Hand {i}:</strong>&nbsp;
-            Avg {h.speed.toFixed(1)} px/s,&nbsp;
-            Erratic {h.err.toFixed(1)} /s
+            <strong>Hand {i}:</strong> Avg {h.speed.toFixed(1)} px/s, Erratic {h.err.toFixed(1)} /s
           </div>
         ))}
         <div><strong>Movement:</strong> {ui.feedback}</div>
