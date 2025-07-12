@@ -1,49 +1,41 @@
 import React, { useState } from 'react';
 import VideoAudioProcessor from './VideoAudioProcessor';
-import FeedbackReport      from './FeedbackReport';
+import FeedbackReport from './FeedbackReport';
 
 export default function InterviewSession() {
-  const [stage,  setStage]  = useState('idle');   // idle | recording | processing | report
+  const [stage, setStage] = useState('idle');
   const [report, setReport] = useState(null);
 
   const handleFinish = (cameraReport) => {
-    setStage('processing');          // hide camera
-
-    const finalReport = {
-      ...cameraReport,
-      content_score: 8.5,
-      voice_score:   7.2,
-      face_score:    9.1,
-      overall_feedback:
-        'Strong performance with clear communication and good presence.',
-      strengths: [
-        'Professional demeanor',
-        'Clear articulation',
-        'Good storytelling',
-        'Stayed composed under pressure',
-      ],
-      areas_for_improvement: [
-        'Add quantitative results to achievements',
-        'Smoother topic transitions',
-        'Stronger conclusions',
-      ],
-      tips: [
-        'Maintain eye contact.',
-        'Vary voice pace for emphasis.',
-        'Use stronger wrap-up statements.',
-      ],
-      interview_duration: '0 min 05 s',
-    };
-
+    setStage('processing');
     setTimeout(() => {
-      setReport(finalReport);
+      setReport(cameraReport);
       setStage('report');
     }, 1500);
   };
 
-  if (stage === 'report')     return <FeedbackReport report={report} />;
-  if (stage === 'processing') return <p>Generating feedback…</p>;
-  if (stage === 'recording')  return <VideoAudioProcessor onFinish={handleFinish} />;
+  if (stage === 'report') return <FeedbackReport report={report} />;
+  if (stage === 'processing') return <p>Analyzing your hand movements...</p>;
+  if (stage === 'recording') return <VideoAudioProcessor onFinish={handleFinish} />;
 
-  return <button onClick={() => setStage('recording')}>Start Interview</button>;
+  return (
+    <div style={{ textAlign: 'center', padding: '20px' }}>
+      <h2>Hand Gesture Analysis</h2>
+      <p>We'll analyze your hand movements during the interview</p>
+      <button 
+        onClick={() => setStage('recording')}
+        style={{
+          padding: '10px 20px',
+          fontSize: '16px',
+          backgroundColor: '#4285f4',
+          color: 'white',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: 'pointer'
+        }}
+      >
+        Start Analysis
+      </button>
+    </div>
+  );
 }
