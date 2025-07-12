@@ -37,21 +37,28 @@ README.md # Project overview (this file)
 
 ## Installation
 
-1. Clone the repo and `cd` into it:
+1. Clone the repo and `cd` into it:  
    ```bash
    git clone https://github.com/your-org/interview-analyzer.git
    cd interview-analyzer
 
-Install core dependencies:
-npm install
 
-Install TensorFlow.js and models:
+2. Install core dependencies:
+```bash
+npm install
+```
+
+3. Install TensorFlow.js and models:
+```bash
 npm install @tensorflow/tfjs-backend-webgl
 npm install @tensorflow-models/hand-pose-detection
 npm install @tensorflow-models/face-landmarks-detection
+```
 
 Start the development server:
+'''bash
 npm start
+```
 
 ## Usage Pipeline
 
