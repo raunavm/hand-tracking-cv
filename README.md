@@ -10,6 +10,7 @@
 ---
 
 ## Project Structure
+
 public/
 src/
 ├── components/
@@ -21,7 +22,6 @@ src/
 theme.css # Global styles
 package.json # Dependencies & scripts
 README.md # Project overview (this file)
-
 
 ---
 
