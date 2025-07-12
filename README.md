@@ -1,18 +1,5 @@
 # Hand Tracking CV Project
 
-## Table of Contents
-
-1. [Demo](#demo)  
-2. [Features](#features)  
-3. [Project Structure](#project-structure)  
-4. [Prerequisites](#prerequisites)  
-5. [Installation](#installation)  
-6. [Usage Pipeline](#usage-pipeline)  
-7. [Key Features](#key-features)  
-8. [Next Steps](#next-steps)  
-9. [License](#license)  
-
-
 ## Features
 
 - **Face Calibration**: Quick 5‑second baseline to detect face alignment.  
