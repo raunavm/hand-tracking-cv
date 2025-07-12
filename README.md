@@ -1,8 +1,4 @@
-# Interview Performance Analyzer
-
-A web‑based tool that guides users through a short interview-style session, tracks hand and face movements in real time, and delivers a detailed performance report with actionable tips.
-
----
+# Hand Tracking CV Project
 
 ## Table of Contents
 
@@ -16,14 +12,6 @@ A web‑based tool that guides users through a short interview-style session, tr
 8. [Next Steps](#next-steps)  
 9. [License](#license)  
 
----
-
-## Demo
-
-![screenshot of live feedback overlay](/public/demo-screenshot.png)  
-*Live visualization of hand‑keypoints and feedback prompts.*
-
----
 
 ## Features
 
@@ -117,5 +105,3 @@ npm start
 - Enhance live feedback (visual cues) and post-session analytics  
 - Implement Web Speech API for real-time speech analysis  
 - Add multi-session progress tracking  
-
-
