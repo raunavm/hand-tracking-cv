@@ -56,7 +56,7 @@ npm install @tensorflow-models/face-landmarks-detection
 ```
 
 Start the development server:
-'''bash
+```bash
 npm start
 ```
 
